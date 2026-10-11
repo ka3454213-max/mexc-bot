@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MEXC Futures Bot - Professional Fast Live Engine for Render
+MEXC Futures Bot - Free Render Web Service Engine with Flask Wrapper
 """
 
 import os
@@ -10,9 +10,10 @@ import math
 import hmac
 import hashlib
 import json
-import traceback
+import threading
 from datetime import datetime, timezone
 import requests
+from flask import Flask
 
 # Force unbuffered output
 sys.stdout.reconfigure(line_buffering=True)
@@ -41,17 +42,25 @@ active_sl_price = 0.0
 active_tp_price = 0.0
 partial_tp_target = 0.0
 
-last_evaluated_candle_time = None
 last_signal_bar_time = 0
+
+# =====================================================================
+# FLASK WEB SERVER (To satisfy Render Free Web Service requirements)
+# =====================================================================
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "MEXC Futures Bot is Running Live!"
+
+def run_web_server():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
 
 # =====================================================================
 # FIXED MEXC FUTURES API SIGNED EXECUTION
 # =====================================================================
 def place_mexc_live_order(symbol, side):
-    """
-    Executes real live market order on MEXC Futures via official API.
-    side: 1 (Open Long / Buy), 3 (Open Short / Sell)
-    """
     if DRY_RUN:
         print(f"[DRY RUN] Would execute order on MEXC for {symbol} | Side: {side}", flush=True)
         return True
@@ -71,7 +80,6 @@ def place_mexc_live_order(symbol, side):
         
         body_str = json.dumps(payload, separators=(',', ':'))
         
-        # Correct MEXC signature string construction
         signature_payload = MEXC_API_KEY + timestamp + body_str
         signature = hmac.new(
             MEXC_SECRET_KEY.encode('utf-8'),
@@ -250,13 +258,13 @@ def check_fast_signal(candles):
     return None
 
 # =====================================================================
-# MAIN LOOP
+# MAIN BOT LOOP
 # =====================================================================
-def main():
-    global last_evaluated_candle_time, in_position, partial_tp_taken, active_trade_type, active_entry_price, active_sl_price, active_tp_price, partial_tp_target
+def bot_main_loop():
+    global in_position, partial_tp_taken, active_trade_type, active_entry_price, active_sl_price, active_tp_price, partial_tp_target
     
     print("=" * 65, flush=True)
-    print("MEXC BOT - PROFESSIONAL FAST LIVE ENGINE (RENDER DEPLOYMENT)", flush=True)
+    print("MEXC BOT - FREE RENDER WEB SERVICE ENGINE STARTED", flush=True)
     print("=" * 65, flush=True)
 
     while True:
@@ -289,7 +297,7 @@ def main():
 
                     success = place_mexc_live_order(SYMBOL, side=1)
                     if success:
-                        print(f"\n[{now_str} UTC] 🚀 [REAL LIVE BUY EXECUTED ON MEXC!] Price: ${active_entry_price:.2f} | TP: ${active_tp_price:.2f} | SL: ${active_sl_price:.2f}\n", flush=True)
+                        print(f"\n[{now_str} UTC] 🚀 [REAL LIVE BUY EXECUTED ON MEXC!] Price: ${active_entry_price:.2f}\n", flush=True)
                     else:
                         in_position = False
 
@@ -304,7 +312,7 @@ def main():
 
                     success = place_mexc_live_order(SYMBOL, side=3)
                     if success:
-                        print(f"\n[{now_str} UTC] 🚀 [REAL LIVE SELL EXECUTED ON MEXC!] Price: ${active_entry_price:.2f} | TP: ${active_tp_price:.2f} | SL: ${active_sl_price:.2f}\n", flush=True)
+                        print(f"\n[{now_str} UTC] 🚀 [REAL LIVE SELL EXECUTED ON MEXC!] Price: ${active_entry_price:.2f}\n", flush=True)
                     else:
                         in_position = False
 
@@ -317,8 +325,13 @@ def main():
             time.sleep(POLL_INTERVAL_SEC)
 
         except Exception as e:
-            print(f"\n[{datetime.now(timezone.utc).strftime('%H:%M:%S')}] Exception Guard: {e}", flush=True)
+            print(f"\n[Exception Guard]: {e}", flush=True)
             time.sleep(10)
 
 if __name__ == "__main__":
-    main()
+    # Start bot in a background thread so Flask can run on the main thread
+    t = threading.Thread(target=bot_main_loop, daemon=True)
+    t.start()
+    
+    # Run Flask web server
+    run_web_server()
